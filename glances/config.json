@@ -1,0 +1,9 @@
+{
+    "alert_settings": {
+        "cpu_threshold": 90,
+        "memory_threshold": 20
+    },
+    "notification_preferences": {
+        "email": "YT1953ca@yahoo.com"
+    }
+}
