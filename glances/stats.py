@@ -25,7 +25,7 @@ from glances.cpu_percent import cpu_percent
 from glances.logger import logger
 from glances.timer import Counter
 from glances.timer import Timer
-from email_alert import send_email_alert
+from glances.email_alert import send_email_alert
 
 # Load config from JSON file
 config_path = os.path.join(os.path.dirname(__file__), 'config.json')
