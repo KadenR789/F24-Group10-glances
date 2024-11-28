@@ -10,15 +10,39 @@
 
 import collections
 import os
+import json
 import pathlib
 import sys
 import threading
 import traceback
 from importlib import import_module
+import psutil  # Make sure this is imported at the top of your file
 
 from glances.globals import exports_path, plugins_path, sys_path
+from glances.thresholds import GlancesThresholds
+from glances.processes import glances_processes
+from glances.cpu_percent import cpu_percent
 from glances.logger import logger
 from glances.timer import Counter
+from glances.timer import Timer
+from glances.email_alert import send_email_alert
+
+# Load config from JSON file
+config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+
+try:
+    with open(config_path, 'r') as config_file:
+        config = json.load(config_file)
+except FileNotFoundError:
+    print(f"Configuration file not found: {config_path}")
+    config = {}
+
+# Extract values from configuration
+cpu_threshold = config.get("alert_settings", {}).get("cpu_threshold", 90)
+memory_threshold = config.get("alert_settings", {}).get("memory_threshold", 85)
+alert_email = config.get("notification_preferences", {}).get("email", "user@example.com")
+
+
 
 
 class GlancesStats:
@@ -37,7 +61,45 @@ class GlancesStats:
         # Load plugins and exports modules
         self.first_export = True
         self.load_modules(self.args)
-
+        self.alert_timer_cpu = Timer(100)  # Cooldown period of 5 minutes between emails
+        self.alert_timer_mem = Timer(100)  # Cooldown period of 5 minutes between emails
+        self.thresholds = GlancesThresholds()  # Initialize thresholds
+    def check_critical_and_alert(self):
+        """Check thresholds and send an alert if at a critical level."""
+        # Populating cpu usage stat and mem usage stat
+        cpu_usage = psutil.cpu_percent(interval=1)
+        
+        memory_info = psutil.virtual_memory()
+        memory_usage = memory_info.percent
+        
+        # Use thresholds from configuration file
+        CPU_CRITICAL_THRESHOLD = cpu_threshold
+        MEMORY_CRITICAL_THRESHOLD = memory_threshold
+        # Check if CPU threshold is at critical level
+        if cpu_usage >= CPU_CRITICAL_THRESHOLD and self.alert_timer_cpu.finished():
+            # Send email alert
+            subject = "Critical Alert: CPU Usage Threshold Exceeded"
+            body = f"The CPU usage has reached a critical level: {cpu_usage}%"
+            send_email_alert(
+                subject=subject,
+                body=body,
+                to_email=alert_email  # Replace with actual recipient email
+            )
+            # Reset timer to avoid repeated alerts
+            self.alert_timer_cpu.reset()
+        # Check if Memory threshold is critical
+    
+        
+        if memory_usage >= MEMORY_CRITICAL_THRESHOLD and self.alert_timer_mem.finished():
+            # Send email alert
+            subject = "Critical Alert: Memory Usage Threshold Exceeded"
+            body = f"The memory usage has reached a critical level: {memory_usage}%"
+            send_email_alert(
+                subject=subject,
+                body=body,
+                to_email=alert_email  # Replace with actual recipient email
+            )
+            self.alert_timer_mem.reset()
     def __getattr__(self, item):
         """Overwrite the getattr method in case of attribute is not found.
 
@@ -267,6 +329,8 @@ class GlancesStats:
         # Start update of all enable plugins
         for p in self.getPluginsList(enable=True):
             self.__update_plugin(p)
+        # After updating metrics, check for critical levels
+        self.check_critical_and_alert()
 
     def export(self, input_stats=None):
         """Export all the stats.
